@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>クラウドPOSレジ - Firebase POS App</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col pb-20 md:pb-0">
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full px-4 pointer-events-none"></div>
+
+    <!-- Global Loading Overlay -->
+    <div id="loading-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center text-white hidden">
+        <div class="w-12 h-12 border-4 border-indigo-400 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p id="loading-text" class="text-sm font-medium tracking-wide">処理中...</p>
+    </div>
+
+    <!-- Authentication Screen (Shown when logged out) -->
+    <div id="auth-screen" class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full text-center space-y-6 transform transition-all">
+            <div class="w-20 h-20 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                <i class="fa-solid fa-cash-register text-4xl"></i>
+            </div>
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">スマートクラウドPOS</h1>
+                <p class="text-sm text-slate-500 mt-2">売上管理・レジ打ちはこれひとつで。<br>安全なデータ同期でスマホでも簡単操作。</p>
+            </div>
+
+            <!-- Firebase Setup Alert Notice -->
+            <div id="firebase-config-notice" class="hidden text-left bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-800 space-y-2">
+                <div class="flex items-center gap-2 font-bold text-amber-900">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>
+                    <span>Firebase Auth未有効化の案内</span>
+                </div>
+                <p>Googleログインを有効にするには、Firebaseコンソールで設定が必要です：</p>
+                <ol class="list-decimal pl-4 space-y-1 text-slate-700 font-mono text-[11px]">
+                    <li>Firebase Console → 「posapp-dff18」を開く</li>
+                    <li>「Authentication」を開き「使ってみる」をクリック</li>
+                    <li>「Sign-in method」で Google を有効にする</li>
+                </ol>
+                <p class="text-[11px] text-slate-500 pt-1 border-t border-amber-200/60">設定なしですぐテストする場合は下記の「デモモード」をご利用ください。</p>
+            </div>
+
+            <div class="border-t border-slate-100 pt-6 space-y-3">
+                <button id="btn-login-google" class="w-full py-3.5 px-4 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl shadow-sm text-slate-700 font-semibold flex items-center justify-center gap-3 transition hover:shadow-md active:scale-98">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                    <span>Googleアカウントでログイン</span>
+                </button>
+
+                <!-- Demo Login Button -->
+                <button id="btn-login-demo" class="w-full py-3 px-4 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl font-semibold flex items-center justify-center gap-2 transition active:scale-98 text-sm">
+                    <i class="fa-solid fa-play text-indigo-500"></i>
+                    <span>デモモードで試す (設定なしで即体験)</span>
+                </button>
+            </div>
+
+            <p class="text-xs text-slate-400">ログインすることで利用規約に同意したことになります</p>
+        </div>
+    </div>
+
+    <!-- Main Application UI (Hidden until authenticated) -->
+    <div id="main-app" class="hidden flex-col min-h-screen">
+        <!-- Top App Bar Header -->
+        <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+            <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-md">
+                        <i class="fa-solid fa-store text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 class="text-lg font-bold text-slate-800 leading-tight">スマートPOS</h1>
+                            <span id="demo-badge" class="hidden text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full border border-amber-300">デモモード</span>
+                        </div>
+                        <p class="text-xs text-slate-500 hidden sm:block">クラウド売上管理システム</p>
+                    </div>
+                </div>
+
+                <!-- User profile & Logout -->
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-2 bg-slate-100 py-1.5 px-3 rounded-full border border-slate-200">
+                        <img id="user-avatar" class="w-6 h-6 rounded-full bg-slate-300 object-cover" src="https://placehold.co/100x100/6366f1/ffffff?text=U" alt="Avatar">
+                        <span id="user-name" class="text-xs font-semibold text-slate-700 max-w-[100px] sm:max-w-[150px] truncate">ユーザー</span>
+                    </div>
+                    <button id="btn-logout" class="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="ログアウト">
+                        <i class="fa-solid fa-right-from-bracket text-lg"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content Area -->
+        <div class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
+            
+            <!-- Navigation Side / Bottom Bar -->
+            <nav class="md:col-span-3 lg:col-span-2">
+                <!-- Mobile Navigation Bar (Fixed Bottom) -->
+                <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 md:hidden flex justify-around py-2 px-1 shadow-lg">
+                    <button data-tab="pos" class="nav-btn flex-1 flex flex-col items-center py-1.5 text-indigo-600 font-semibold text-xs">
+                        <i class="fa-solid fa-calculator text-lg mb-0.5"></i>
+                        <span>レジ会計</span>
+                    </button>
+                    <button data-tab="history" class="nav-btn flex-1 flex flex-col items-center py-1.5 text-slate-500 font-medium text-xs">
+                        <i class="fa-solid fa-receipt text-lg mb-0.5"></i>
+                        <span>販売履歴</span>
+                    </button>
+                    <button data-tab="analytics" class="nav-btn flex-1 flex flex-col items-center py-1.5 text-slate-500 font-medium text-xs">
+                        <i class="fa-solid fa-chart-line text-lg mb-0.5"></i>
+                        <span>売上集計</span>
+                    </button>
+                    <button data-tab="products" class="nav-btn flex-1 flex flex-col items-center py-1.5 text-slate-500 font-medium text-xs">
+                        <i class="fa-solid fa-box text-lg mb-0.5"></i>
+                        <span>商品管理</span>
+                    </button>
+                </div>
+
+                <!-- Desktop Navigation Sidebar -->
+                <div class="hidden md:flex flex-col gap-1 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm sticky top-20">
+                    <button data-tab="pos" class="nav-btn-desk flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold bg-indigo-50 text-indigo-600 transition">
+                        <i class="fa-solid fa-calculator text-base w-5 text-center"></i>
+                        <span>レジ会計</span>
+                    </button>
+                    <button data-tab="history" class="nav-btn-desk flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition">
+                        <i class="fa-solid fa-receipt text-base w-5 text-center"></i>
+                        <span>販売履歴・編集</span>
+                    </button>
+                    <button data-tab="analytics" class="nav-btn-desk flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition">
+                        <i class="fa-solid fa-chart-line text-base w-5 text-center"></i>
+                        <span>売上集計・分析</span>
+                    </button>
+                    <button data-tab="products" class="nav-btn-desk flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition">
+                        <i class="fa-solid fa-box text-base w-5 text-center"></i>
+                        <span>商品マスタ設定</span>
+                    </button>
+                </div>
+            </nav>
+
+            <main class="md:col-span-9 lg:col-span-10">
+                <!-- TAB 1: POS / REGISTER -->
+                <div id="tab-pos" class="tab-content grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <!-- Left Section: Quick Selection & Form Input -->
+                    <div class="lg:col-span-7 space-y-6">
+                        <!-- Preset Quick Select Items -->
+                        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                <i class="fa-solid fa-bolt text-amber-500"></i> クイック商品選択
+                            </h2>
+                            <div id="quick-products-container" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                <div class="col-span-full text-center py-6 text-slate-400 text-sm">
+                                    登録商品がありません。「商品管理」タブから事前登録できます。
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Manual Sale Input Form -->
+                        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-pen-to-square text-indigo-500"></i> 直接入力・会計追加
+                            </h2>
+                            <form id="pos-input-form" class="space-y-4" onsubmit="return false;">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">商品名 <span class="text-red-500">*</span></label>
+                                    <input type="text" id="input-item-name" placeholder="例: コーヒー、ランチセット" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition text-sm">
+                                    <p id="err-item-name" class="text-xs text-red-500 mt-1 hidden"></p>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-slate-600 mb-1">単価 (円) <span class="text-red-500">*</span></label>
+                                        <input type="number" id="input-item-price" placeholder="500" min="0" step="1" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition text-sm">
+                                        <p id="err-item-price" class="text-xs text-red-500 mt-1 hidden"></p>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-slate-600 mb-1">数量 <span class="text-red-500">*</span></label>
+                                        <input type="number" id="input-item-qty" value="1" min="1" step="1" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition text-sm">
+                                        <p id="err-item-qty" class="text-xs text-red-500 mt-1 hidden"></p>
+                                    </div>
+                                </div>
+
+                                <button type="button" id="btn-add-to-cart" class="w-full py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold rounded-xl border border-indigo-200 transition flex items-center justify-center gap-2 active:scale-98">
+                                    <i class="fa-solid fa-cart-plus"></i>
+                                    <span>カートに追加</span>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Right Section: Cart & Checkout -->
+                    <div class="lg:col-span-5">
+                        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col h-full min-h-[450px]">
+                            <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                                <h2 class="font-bold text-slate-800 flex items-center gap-2">
+                                    <i class="fa-solid fa-shopping-bag text-indigo-600"></i> カート明細
+                                </h2>
+                                <button id="btn-clear-cart" class="text-xs text-slate-400 hover:text-red-500 transition">
+                                    クリア
+                                </button>
+                            </div>
+
+                            <!-- Cart Item List -->
+                            <div id="cart-items-list" class="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[250px]">
+                                <div class="text-center py-10 text-slate-400 text-sm">
+                                    カートに商品がありません
+                                </div>
+                            </div>
+
+                            <!-- Payment Section -->
+                            <div class="pt-4 border-t border-slate-200 space-y-3 mt-auto">
+                                <div class="flex justify-between items-center text-slate-600">
+                                    <span class="text-sm font-medium">合計点数</span>
+                                    <span id="cart-total-count" class="font-semibold text-slate-800">0 点</span>
+                                </div>
+
+                                <div class="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                    <span class="text-base font-bold text-slate-700">合計金額</span>
+                                    <span id="cart-total-price" class="text-2xl font-black text-indigo-600">¥0</span>
+                                </div>
+
+                                <!-- Change calculation -->
+                                <div class="grid grid-cols-2 gap-3 pt-1">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-slate-500 mb-1">お預かり金額</label>
+                                        <input type="number" id="input-payment-received" placeholder="0" min="0" class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-semibold text-right">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-slate-500 mb-1">お釣り</label>
+                                        <div id="display-change-amount" class="w-full px-3 py-2 rounded-lg bg-slate-100 border border-slate-200 text-sm font-bold text-right text-slate-700">
+                                            ¥0
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button id="btn-checkout" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-2 active:scale-98">
+                                    <i class="fa-solid fa-circle-check text-lg"></i>
+                                    <span>会計を完了して保存</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 2: SALES HISTORY -->
+                <div id="tab-history" class="tab-content space-y-6 hidden">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-4 justify-between items-center">
+                        <div class="relative w-full sm:w-72">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-sm"></i>
+                            <input type="text" id="history-search-input" placeholder="商品名で検索..." class="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                        </div>
+                        <div class="flex items-center gap-2 w-full sm:w-auto">
+                            <input type="date" id="history-date-filter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700">
+                            <button id="btn-reset-filter" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold transition">
+                                リセット
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+                            <h2 class="font-bold text-slate-800">販売明細一覧</h2>
+                            <span id="history-count-badge" class="text-xs bg-indigo-50 text-indigo-600 font-semibold px-2.5 py-1 rounded-full">0 件</span>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse text-sm">
+                                <thead>
+                                    <tr class="bg-slate-50 text-slate-500 border-b border-slate-200 font-semibold text-xs uppercase tracking-wider">
+                                        <th class="p-4">日時</th>
+                                        <th class="p-4">商品名</th>
+                                        <th class="p-4 text-right">単価</th>
+                                        <th class="p-4 text-center">数量</th>
+                                        <th class="p-4 text-right">小計</th>
+                                        <th class="p-4 text-center">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sales-history-table-body" class="divide-y divide-slate-100">
+                                    <tr>
+                                        <td colspan="6" class="text-center py-10 text-slate-400">データがありません</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: ANALYTICS -->
+                <div id="tab-analytics" class="tab-content space-y-6 hidden">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <p class="text-xs font-semibold text-slate-500 mb-1">本日の売上</p>
+                            <h3 id="stat-today-total" class="text-2xl font-black text-indigo-600">¥0</h3>
+                        </div>
+                        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <p class="text-xs font-semibold text-slate-500 mb-1">今月の売上</p>
+                            <h3 id="stat-month-total" class="text-2xl font-black text-slate-800">¥0</h3>
+                        </div>
+                        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <p class="text-xs font-semibold text-slate-500 mb-1">全期間 合計売上</p>
+                            <h3 id="stat-all-total" class="text-2xl font-black text-emerald-600">¥0</h3>
+                        </div>
+                        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <p class="text-xs font-semibold text-slate-500 mb-1">総販売件数</p>
+                            <h3 id="stat-sales-count" class="text-2xl font-black text-amber-500">0 件</h3>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <div class="lg:col-span-8 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <h2 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-chart-bar text-indigo-500"></i> 日別売上推移
+                            </h2>
+                            <div class="relative h-64 sm:h-80 w-full">
+                                <canvas id="dailySalesChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="lg:col-span-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <h2 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-chart-pie text-purple-500"></i> 商品別売上割合
+                            </h2>
+                            <div class="relative h-64 sm:h-80 w-full flex items-center justify-center">
+                                <canvas id="productShareChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 4: PRODUCT MASTER -->
+                <div id="tab-products" class="tab-content space-y-6 hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+                        <div class="md:col-span-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-plus-circle text-indigo-600"></i> 商品プリセットの登録
+                            </h2>
+                            <form id="product-master-form" class="space-y-4" onsubmit="return false;">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">商品名 <span class="text-red-500">*</span></label>
+                                    <input type="text" id="preset-item-name" placeholder="例: ドリンク" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">デフォルト単価 (円) <span class="text-red-500">*</span></label>
+                                    <input type="number" id="preset-item-price" placeholder="300" min="0" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none text-sm">
+                                </div>
+                                <button type="button" id="btn-save-preset" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition shadow-md">
+                                    登録する
+                                </button>
+                            </form>
+                        </div>
+
+                        <div class="md:col-span-7 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-4">登録済み商品一覧</h2>
+                            <div id="master-products-list" class="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                                <div class="text-center py-8 text-slate-400 text-sm">登録されている商品はありません</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- EDIT SALE MODAL -->
+    <div id="modal-edit-sale" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 class="font-bold text-slate-800 text-lg">販売データの修正</h3>
+                <button id="btn-close-edit-modal" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form id="edit-sale-form" class="space-y-4" onsubmit="return false;">
+                <input type="hidden" id="edit-sale-id">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">商品名</label>
+                    <input type="text" id="edit-item-name" class="w-full px-4 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">単価 (円)</label>
+                        <input type="number" id="edit-item-price" min="0" class="w-full px-4 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">数量</label>
+                        <input type="number" id="edit-item-qty" min="1" class="w-full px-4 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">販売日付</label>
+                    <input type="date" id="edit-item-date" class="w-full px-4 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div class="flex justify-end gap-3 pt-3">
+                    <button type="button" id="btn-cancel-edit" class="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-600 text-sm font-semibold hover:bg-slate-50">キャンセル</button>
+                    <button type="button" id="btn-submit-edit" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow">更新保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- DELETE CONFIRMATION MODAL -->
+    <div id="modal-delete-confirm" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-center">
+            <div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+                <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+            </div>
+            <div>
+                <h3 class="font-bold text-slate-800 text-lg">販売履歴を削除しますか？</h3>
+                <p class="text-xs text-slate-500 mt-1">この操作は取り消せません。</p>
+            </div>
+            <input type="hidden" id="delete-target-id">
+            <div class="flex justify-center gap-3 pt-2">
+                <button id="btn-cancel-delete" class="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-600 text-sm font-semibold hover:bg-slate-50">キャンセル</button>
+                <button id="btn-confirm-delete" class="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold shadow">削除する</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            GoogleAuthProvider, 
+            signInWithPopup, 
+            signOut, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            doc, 
+            addDoc, 
+            updateDoc, 
+            deleteDoc, 
+            onSnapshot, 
+            serverTimestamp 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Provided Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDvzcoO16epdPr6pk5vAAFVO1YtCbqVeew",
+            authDomain: "posapp-dff18.firebaseapp.com",
+            projectId: "posapp-dff18",
+            storageBucket: "posapp-dff18.firebasestorage.app",
+            messagingSenderId: "671880520939",
+            appId: "1:671880520939:web:8d05dbe4fda704b8918aae"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const googleProvider = new GoogleAuthProvider();
+
+        // Application State
+        let currentUser = null;
+        let isDemoMode = false;
+        let unsubscribeSales = null;
+        let unsubscribeProducts = null;
+        let salesData = [];
+        let presetProductsData = [];
+        let cartItems = [];
+
+        // Chart instances
+        let dailySalesChartInstance = null;
+        let productShareChartInstance = null;
+
+        // UI Element References
+        const authScreen = document.getElementById('auth-screen');
+        const mainApp = document.getElementById('main-app');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingText = document.getElementById('loading-text');
+
+        // Helper: Show Toast Notification
+        function showToast(message, type = 'info') {
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const bgColors = {
+                success: 'bg-emerald-600 text-white',
+                error: 'bg-red-600 text-white',
+                info: 'bg-slate-800 text-white',
+                warning: 'bg-amber-500 text-white'
+            };
+
+            const icons = {
+                success: 'fa-circle-check',
+                error: 'fa-circle-xmark',
+                info: 'fa-circle-info',
+                warning: 'fa-triangle-exclamation'
+            };
+
+            toast.className = `p-4 rounded-xl shadow-lg flex items-center gap-3 transition-all transform translate-y-2 opacity-0 pointer-events-auto ${bgColors[type] || bgColors.info}`;
+            toast.innerHTML = `
+                <i class="fa-solid ${icons[type] || icons.info} text-lg"></i>
+                <span class="text-sm font-medium flex-1">${message}</span>
+            `;
+
+            toastContainer.appendChild(toast);
+
+            setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        function setLoading(isLoading, text = '処理中...') {
+            loadingText.textContent = text;
+            if (isLoading) {
+                loadingOverlay.classList.remove('hidden');
+            } else {
+                loadingOverlay.classList.add('hidden');
+            }
+        }
+
+        // Demo Mode Helpers using LocalStorage
+        function loadDemoData() {
+            const storedSales = localStorage.getItem('demo_pos_sales');
+            const storedPresets = localStorage.getItem('demo_pos_presets');
+
+            salesData = storedSales ? JSON.parse(storedSales) : [
+                { id: 'd1', itemName: 'コーヒー', price: 450, quantity: 2, subtotal: 900, date: new Date().toISOString().split('T')[0], time: '10:00' },
+                { id: 'd2', itemName: 'サンドイッチ', price: 680, quantity: 1, subtotal: 680, date: new Date().toISOString().split('T')[0], time: '11:30' }
+            ];
+
+            presetProductsData = storedPresets ? JSON.parse(storedPresets) : [
+                { id: 'p1', name: 'ブレンドコーヒー', price: 450 },
+                { id: 'p2', name: 'アイスカフェラテ', price: 520 },
+                { id: 'p3', name: 'ミックスサンド', price: 680 }
+            ];
+
+            renderPresetProducts();
+            renderSalesHistory();
+            renderAnalytics();
+        }
+
+        function saveDemoSales() {
+            localStorage.setItem('demo_pos_sales', JSON.stringify(salesData));
+            renderSalesHistory();
+            renderAnalytics();
+        }
+
+        function saveDemoPresets() {
+            localStorage.setItem('demo_pos_presets', JSON.stringify(presetProductsData));
+            renderPresetProducts();
+        }
+
+        function enterAppUI(user, demo = false) {
+            currentUser = user;
+            isDemoMode = demo;
+
+            document.getElementById('user-name').textContent = user.displayName || user.email || 'ユーザー';
+            document.getElementById('user-avatar').src = user.photoURL || 'https://placehold.co/100x100/6366f1/ffffff?text=User';
+
+            if (isDemoMode) {
+                document.getElementById('demo-badge').classList.remove('hidden');
+                loadDemoData();
+            } else {
+                document.getElementById('demo-badge').classList.add('hidden');
+                attachFirestoreListeners();
+            }
+
+            authScreen.classList.add('hidden');
+            mainApp.classList.remove('hidden');
+            mainApp.classList.add('flex');
+        }
+
+        // Auth State Changed Observer
+        onAuthStateChanged(auth, (user) => {
+            if (user && !isDemoMode) {
+                enterAppUI(user, false);
+            } else if (!isDemoMode) {
+                currentUser = null;
+                if (unsubscribeSales) unsubscribeSales();
+                if (unsubscribeProducts) unsubscribeProducts();
+
+                authScreen.classList.remove('hidden');
+                mainApp.classList.add('hidden');
+                mainApp.classList.remove('flex');
+            }
+        });
+
+        // Login Buttons
+        document.getElementById('btn-login-google').addEventListener('click', async () => {
+            try {
+                setLoading(true, 'Google認証中...');
+                await signInWithPopup(auth, googleProvider);
+                showToast('ログインしました', 'success');
+            } catch (error) {
+                console.error("Login Error:", error);
+                
+                // Catch auth/configuration-not-found explicitly
+                if (error.code === 'auth/configuration-not-found' || error.message?.includes('configuration-not-found')) {
+                    document.getElementById('firebase-config-notice').classList.remove('hidden');
+                    showToast('FirebaseのGoogle認証が無効になっています。下記の案内を確認してください。', 'warning');
+                } else {
+                    showToast(`ログインに失敗しました: ${error.message}`, 'error');
+                }
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        document.getElementById('btn-login-demo').addEventListener('click', () => {
+            const demoUser = {
+                uid: 'demo-user-123',
+                displayName: 'デモユーザー',
+                photoURL: 'https://placehold.co/100x100/4f46e5/ffffff?text=Demo'
+            };
+            enterAppUI(demoUser, true);
+            showToast('デモモードでログインしました', 'info');
+        });
+
+        // Logout Button
+        document.getElementById('btn-logout').addEventListener('click', async () => {
+            try {
+                if (isDemoMode) {
+                    isDemoMode = false;
+                    currentUser = null;
+                    authScreen.classList.remove('hidden');
+                    mainApp.classList.add('hidden');
+                    mainApp.classList.remove('flex');
+                    showToast('デモモードを終了しました', 'info');
+                } else {
+                    await signOut(auth);
+                    showToast('ログアウトしました', 'info');
+                }
+            } catch (error) {
+                showToast('ログアウトに失敗しました', 'error');
+            }
+        });
+
+        // Firestore Listeners
+        function attachFirestoreListeners() {
+            if (!currentUser || isDemoMode) return;
+
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'posapp-dff18';
+            const salesColRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'sales');
+            const productsColRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'presets');
+
+            unsubscribeSales = onSnapshot(salesColRef, (snapshot) => {
+                salesData = [];
+                snapshot.forEach(doc => {
+                    salesData.push({ id: doc.id, ...doc.data() });
+                });
+                
+                salesData.sort((a, b) => new Date(b.date + 'T' + (b.time || '00:00')) - new Date(a.date + 'T' + (a.time || '00:00')));
+
+                renderSalesHistory();
+                renderAnalytics();
+            }, (error) => {
+                console.error("Sales Listener Error:", error);
+            });
+
+            unsubscribeProducts = onSnapshot(productsColRef, (snapshot) => {
+                presetProductsData = [];
+                snapshot.forEach(doc => {
+                    presetProductsData.push({ id: doc.id, ...doc.data() });
+                });
+                renderPresetProducts();
+            }, (error) => {
+                console.error("Preset Listener Error:", error);
+            });
+        }
+
+        // Tab Switching
+        const navButtons = document.querySelectorAll('[data-tab]');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        navButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetTab = btn.getAttribute('data-tab');
+
+                navButtons.forEach(b => {
+                    if (b.getAttribute('data-tab') === targetTab) {
+                        b.classList.add('text-indigo-600', 'bg-indigo-50', 'font-semibold');
+                        b.classList.remove('text-slate-500', 'text-slate-600');
+                    } else {
+                        b.classList.remove('text-indigo-600', 'bg-indigo-50', 'font-semibold');
+                        b.classList.add('text-slate-500');
+                    }
+                });
+
+                tabContents.forEach(content => {
+                    if (content.id === `tab-${targetTab}`) {
+                        content.classList.remove('hidden');
+                    } else {
+                        content.classList.add('hidden');
+                    }
+                });
+
+                if (targetTab === 'analytics') {
+                    setTimeout(renderAnalytics, 100);
+                }
+            });
+        });
+
+        // Cart Logic
+        function renderCart() {
+            const container = document.getElementById('cart-items-list');
+            const totalCountEl = document.getElementById('cart-total-count');
+            const totalPriceEl = document.getElementById('cart-total-price');
+
+            if (cartItems.length === 0) {
+                container.innerHTML = `<div class="text-center py-10 text-slate-400 text-sm">カートに商品がありません</div>`;
+                totalCountEl.textContent = '0 点';
+                totalPriceEl.textContent = '¥0';
+                calculateChange();
+                return;
+            }
+
+            container.innerHTML = '';
+            let totalQty = 0;
+            let totalPrice = 0;
+
+            cartItems.forEach((item, idx) => {
+                const subtotal = item.price * item.quantity;
+                totalQty += item.quantity;
+                totalPrice += subtotal;
+
+                const itemEl = document.createElement('div');
+                itemEl.className = 'flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm';
+                itemEl.innerHTML = `
+                    <div class="flex-1 min-w-0 pr-2">
+                        <p class="font-semibold text-slate-800 truncate">${escapeHtml(item.name)}</p>
+                        <p class="text-xs text-slate-500">¥${item.price.toLocaleString()} × ${item.quantity}</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="font-bold text-slate-800">¥${subtotal.toLocaleString()}</span>
+                        <button class="text-slate-400 hover:text-red-500 p-1" onclick="removeCartItem(${idx})">
+                            <i class="fa-solid fa-trash-can text-xs"></i>
+                        </button>
+                    </div>
+                `;
+                container.appendChild(itemEl);
+            });
+
+            totalCountEl.textContent = `${totalQty} 点`;
+            totalPriceEl.textContent = `¥${totalPrice.toLocaleString()}`;
+
+            calculateChange();
+        }
+
+        window.removeCartItem = function(index) {
+            cartItems.splice(index, 1);
+            renderCart();
+        };
+
+        document.getElementById('btn-clear-cart').addEventListener('click', () => {
+            cartItems = [];
+            renderCart();
+        });
+
+        const inputPayment = document.getElementById('input-payment-received');
+        const displayChange = document.getElementById('display-change-amount');
+
+        inputPayment.addEventListener('input', calculateChange);
+
+        function calculateChange() {
+            const totalPrice = cartItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+            const received = parseInt(inputPayment.value, 10) || 0;
+            const change = received - totalPrice;
+
+            if (received > 0 && change >= 0) {
+                displayChange.textContent = `¥${change.toLocaleString()}`;
+                displayChange.className = "w-full px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-300 text-sm font-bold text-right text-emerald-700";
+            } else if (received > 0 && change < 0) {
+                displayChange.textContent = `不足 ¥${Math.abs(change).toLocaleString()}`;
+                displayChange.className = "w-full px-3 py-2 rounded-lg bg-red-50 border border-red-300 text-sm font-bold text-right text-red-600";
+            } else {
+                displayChange.textContent = `¥0`;
+                displayChange.className = "w-full px-3 py-2 rounded-lg bg-slate-100 border border-slate-200 text-sm font-bold text-right text-slate-700";
+            }
+        }
+
+        // Direct Input Add
+        document.getElementById('btn-add-to-cart').addEventListener('click', () => {
+            const nameInput = document.getElementById('input-item-name');
+            const priceInput = document.getElementById('input-item-price');
+            const qtyInput = document.getElementById('input-item-qty');
+
+            const errName = document.getElementById('err-item-name');
+            const errPrice = document.getElementById('err-item-price');
+            const errQty = document.getElementById('err-item-qty');
+
+            errName.classList.add('hidden');
+            errPrice.classList.add('hidden');
+            errQty.classList.add('hidden');
+
+            let isValid = true;
+            const name = nameInput.value.trim();
+            const price = parseInt(priceInput.value, 10);
+            const qty = parseInt(qtyInput.value, 10);
+
+            if (!name) {
+                errName.textContent = '商品名を入力してください';
+                errName.classList.remove('hidden');
+                isValid = false;
+            }
+
+            if (isNaN(price) || price < 0) {
+                errPrice.textContent = '正しい金額を入力してください';
+                errPrice.classList.remove('hidden');
+                isValid = false;
+            }
+
+            if (isNaN(qty) || qty <= 0) {
+                errQty.textContent = '数量は1以上を入力してください';
+                errQty.classList.remove('hidden');
+                isValid = false;
+            }
+
+            if (!isValid) return;
+
+            const existing = cartItems.find(i => i.name === name && i.price === price);
+            if (existing) {
+                existing.quantity += qty;
+            } else {
+                cartItems.push({ name, price, quantity: qty });
+            }
+
+            nameInput.value = '';
+            priceInput.value = '';
+            qtyInput.value = '1';
+
+            renderCart();
+            showToast('カートに追加しました', 'info');
+        });
+
+        // Checkout
+        document.getElementById('btn-checkout').addEventListener('click', async () => {
+            if (cartItems.length === 0) {
+                showToast('カートに商品を追加してください', 'warning');
+                return;
+            }
+
+            const totalAmount = cartItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+            const received = parseInt(inputPayment.value, 10) || 0;
+
+            if (received > 0 && received < totalAmount) {
+                showToast('お預かり金額が不十分です', 'warning');
+                return;
+            }
+
+            try {
+                setLoading(true, '販売データを保存中...');
+                const now = new Date();
+                const todayStr = now.toISOString().split('T')[0];
+                const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
+
+                if (isDemoMode) {
+                    for (const item of cartItems) {
+                        salesData.unshift({
+                            id: 'demo_' + Date.now() + Math.random().toString(36).substr(2, 4),
+                            itemName: item.name,
+                            price: item.price,
+                            quantity: item.quantity,
+                            subtotal: item.price * item.quantity,
+                            date: todayStr,
+                            time: timeStr
+                        });
+                    }
+                    saveDemoSales();
+                } else {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'posapp-dff18';
+                    const salesColRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'sales');
+
+                    for (const item of cartItems) {
+                        await addDoc(salesColRef, {
+                            itemName: item.name,
+                            price: item.price,
+                            quantity: item.quantity,
+                            subtotal: item.price * item.quantity,
+                            date: todayStr,
+                            time: timeStr,
+                            createdAt: serverTimestamp()
+                        });
+                    }
+                }
+
+                showToast('会計が完了し、データを保存しました！', 'success');
+                cartItems = [];
+                inputPayment.value = '';
+                renderCart();
+            } catch (error) {
+                console.error("Save Error:", error);
+                showToast('販売の保存に失敗しました', 'error');
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        // Presets Rendering
+        function renderPresetProducts() {
+            const quickContainer = document.getElementById('quick-products-container');
+            const masterList = document.getElementById('master-products-list');
+
+            if (presetProductsData.length === 0) {
+                quickContainer.innerHTML = `<div class="col-span-full text-center py-6 text-slate-400 text-sm">登録商品がありません。「商品管理」タブから事前登録できます。</div>`;
+                masterList.innerHTML = `<div class="text-center py-8 text-slate-400 text-sm">登録されている商品はありません</div>`;
+                return;
+            }
+
+            quickContainer.innerHTML = '';
+            presetProductsData.forEach(p => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl flex flex-col items-start transition text-left active:scale-95 group shadow-sm';
+                btn.innerHTML = `
+                    <span class="font-bold text-slate-800 text-sm group-hover:text-indigo-600 truncate w-full">${escapeHtml(p.name)}</span>
+                    <span class="text-xs text-indigo-600 font-semibold mt-1">¥${p.price.toLocaleString()}</span>
+                `;
+                btn.onclick = () => {
+                    const existing = cartItems.find(i => i.name === p.name && i.price === p.price);
+                    if (existing) {
+                        existing.quantity += 1;
+                    } else {
+                        cartItems.push({ name: p.name, price: p.price, quantity: 1 });
+                    }
+                    renderCart();
+                };
+                quickContainer.appendChild(btn);
+            });
+
+            masterList.innerHTML = '';
+            presetProductsData.forEach(p => {
+                const item = document.createElement('div');
+                item.className = 'flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm';
+                item.innerHTML = `
+                    <div>
+                        <p class="font-bold text-slate-800">${escapeHtml(p.name)}</p>
+                        <p class="text-xs text-slate-500">¥${p.price.toLocaleString()}</p>
+                    </div>
+                    <button class="text-slate-400 hover:text-red-500 p-2 transition" onclick="deletePresetProduct('${p.id}')">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                `;
+                masterList.appendChild(item);
+            });
+        }
+
+        // Save Preset Master
+        document.getElementById('btn-save-preset').addEventListener('click', async () => {
+            const nameInput = document.getElementById('preset-item-name');
+            const priceInput = document.getElementById('preset-item-price');
+
+            const name = nameInput.value.trim();
+            const price = parseInt(priceInput.value, 10);
+
+            if (!name || isNaN(price) || price < 0) {
+                showToast('商品名と正しい単価を入力してください', 'warning');
+                return;
+            }
+
+            try {
+                setLoading(true, '商品プリセットを保存中...');
+                if (isDemoMode) {
+                    presetProductsData.push({ id: 'p_' + Date.now(), name, price });
+                    saveDemoPresets();
+                } else {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'posapp-dff18';
+                    const productsColRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'presets');
+                    await addDoc(productsColRef, { name, price });
+                }
+
+                nameInput.value = '';
+                priceInput.value = '';
+                showToast('商品を登録しました', 'success');
+            } catch (error) {
+                showToast('登録に失敗しました', 'error');
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        window.deletePresetProduct = async function(id) {
+            try {
+                setLoading(true, '削除中...');
+                if (isDemoMode) {
+                    presetProductsData = presetProductsData.filter(p => p.id !== id);
+                    saveDemoPresets();
+                } else {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'posapp-dff18';
+                    await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'presets', id));
+                }
+                showToast('商品を削除しました', 'info');
+            } catch (error) {
+                showToast('削除に失敗しました', 'error');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        // Sales History Filter & Table Render
+        const searchInput = document.getElementById('history-search-input');
+        const dateFilter = document.getElementById('history-date-filter');
+        const resetFilterBtn = document.getElementById('btn-reset-filter');
+
+        [searchInput, dateFilter].forEach(el => el.addEventListener('input', renderSalesHistory));
+
+        resetFilterBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            dateFilter.value = '';
+            renderSalesHistory();
+        });
+
+        function renderSalesHistory() {
+            const tbody = document.getElementById('sales-history-table-body');
+            const badge = document.getElementById('history-count-badge');
+
+            const searchTerm = searchInput.value.trim().toLowerCase();
+            const selectedDate = dateFilter.value;
+
+            const filtered = salesData.filter(item => {
+                const matchesSearch = item.itemName.toLowerCase().includes(searchTerm);
+                const matchesDate = selectedDate ? item.date === selectedDate : true;
+                return matchesSearch && matchesDate;
+            });
+
+            badge.textContent = `${filtered.length} 件`;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-slate-400">該当する販売明細がありません</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = '';
+            filtered.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50/80 transition text-slate-700';
+                tr.innerHTML = `
+                    <td class="p-4 whitespace-nowrap text-xs text-slate-500 font-mono">
+                        ${escapeHtml(item.date)} <span class="text-slate-400">${escapeHtml(item.time || '')}</span>
+                    </td>
+                    <td class="p-4 font-bold text-slate-800">${escapeHtml(item.itemName)}</td>
+                    <td class="p-4 text-right font-medium">¥${item.price.toLocaleString()}</td>
+                    <td class="p-4 text-center">${item.quantity}</td>
+                    <td class="p-4 text-right font-bold text-indigo-600">¥${(item.subtotal || item.price * item.quantity).toLocaleString()}</td>
+                    <td class="p-4 text-center space-x-1">
+                        <button class="p-2 text-slate-400 hover:text-indigo-600 transition" onclick="openEditModal('${item.id}')" title="編集">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button class="p-2 text-slate-400 hover:text-red-600 transition" onclick="openDeleteModal('${item.id}')" title="削除">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Modals
+        const editModal = document.getElementById('modal-edit-sale');
+
+        window.openEditModal = function(id) {
+            const item = salesData.find(s => s.id === id);
+            if (!item) return;
+
+            document.getElementById('edit-sale-id').value = item.id;
+            document.getElementById('edit-item-name').value = item.itemName;
+            document.getElementById('edit-item-price').value = item.price;
+            document.getElementById('edit-item-qty').value = item.quantity;
+            document.getElementById('edit-item-date').value = item.date;
+
+            editModal.classList.remove('hidden');
+        };
+
+        document.getElementById('btn-close-edit-modal').addEventListener('click', () => editModal.classList.add('hidden'));
+        document.getElementById('btn-cancel-edit').addEventListener('click', () => editModal.classList.add('hidden'));
+
+        document.getElementById('btn-submit-edit').addEventListener('click', async () => {
+            const id = document.getElementById('edit-sale-id').value;
+            const name = document.getElementById('edit-item-name').value.trim();
+            const price = parseInt(document.getElementById('edit-item-price').value, 10);
+            const qty = parseInt(document.getElementById('edit-item-qty').value, 10);
+            const date = document.getElementById('edit-item-date').value;
+
+            if (!name || isNaN(price) || price < 0 || isNaN(qty) || qty <= 0 || !date) {
+                showToast('すべての項目を正しく入力してください', 'warning');
+                return;
+            }
+
+            try {
+                setLoading(true, '更新中...');
+                if (isDemoMode) {
+                    const idx = salesData.findIndex(s => s.id === id);
+                    if (idx !== -1) {
+                        salesData[idx] = { ...salesData[idx], itemName: name, price, quantity: qty, subtotal: price * qty, date };
+                        saveDemoSales();
+                    }
+                } else {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'posapp-dff18';
+                    const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'sales', id);
+                    await updateDoc(docRef, {
+                        itemName: name,
+                        price: price,
+                        quantity: qty,
+                        subtotal: price * qty,
+                        date: date
+                    });
+                }
+
+                editModal.classList.add('hidden');
+                showToast('販売データを更新しました', 'success');
+            } catch (error) {
+                showToast('更新に失敗しました', 'error');
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        const deleteModal = document.getElementById('modal-delete-confirm');
+
+        window.openDeleteModal = function(id) {
+            document.getElementById('delete-target-id').value = id;
+            deleteModal.classList.remove('hidden');
+        };
+
+        document.getElementById('btn-cancel-delete').addEventListener('click', () => deleteModal.classList.add('hidden'));
+
+        document.getElementById('btn-confirm-delete').addEventListener('click', async () => {
+            const id = document.getElementById('delete-target-id').value;
+            if (!id) return;
+
+            try {
+                setLoading(true, '削除中...');
+                if (isDemoMode) {
+                    salesData = salesData.filter(s => s.id !== id);
+                    saveDemoSales();
+                } else {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'posapp-dff18';
+                    await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'sales', id));
+                }
+
+                deleteModal.classList.add('hidden');
+                showToast('データを削除しました', 'info');
+            } catch (error) {
+                showToast('削除に失敗しました', 'error');
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        // Analytics calculations
+        function renderAnalytics() {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const currentMonthStr = todayStr.substring(0, 7);
+
+            let todayTotal = 0;
+            let monthTotal = 0;
+            let allTotal = 0;
+            const salesCount = salesData.length;
+
+            const dailyTotals = {};
+            const productShares = {};
+
+            salesData.forEach(item => {
+                const subtotal = item.subtotal || (item.price * item.quantity);
+                allTotal += subtotal;
+
+                if (item.date === todayStr) todayTotal += subtotal;
+                if (item.date && item.date.startsWith(currentMonthStr)) monthTotal += subtotal;
+
+                if (item.date) dailyTotals[item.date] = (dailyTotals[item.date] || 0) + subtotal;
+                if (item.itemName) productShares[item.itemName] = (productShares[item.itemName] || 0) + subtotal;
+            });
+
+            document.getElementById('
